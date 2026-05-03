@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import BookList from './components/BookList';
 import BookDetail from './components/BookDetail';
 import AddEntry from './components/AddEntry';
@@ -18,6 +18,8 @@ export default function App() {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [gapiReady, setGapiReady] = useState(false);
+  const tokenClientRef = useRef(null);
+  const tokenExpiryRef = useRef(null);
 
   useEffect(() => {
     const script = document.createElement('script');
@@ -28,11 +30,41 @@ export default function App() {
     if (stored) setBooks(JSON.parse(stored));
     const storedUser = localStorage.getItem('tripuser');
     const storedToken = localStorage.getItem('triptoken');
-    if (storedUser && storedToken) {
+    const storedExpiry = localStorage.getItem('triptokenexpiry');
+    if (storedUser && storedToken && storedExpiry && Date.now() < parseInt(storedExpiry)) {
       setUser(JSON.parse(storedUser));
       setToken(storedToken);
+      tokenExpiryRef.current = parseInt(storedExpiry);
     }
   }, []);
+
+  const refreshToken = useCallback(() => {
+    return new Promise((resolve, reject) => {
+      if (!tokenClientRef.current) { reject('no client'); return; }
+      tokenClientRef.current.callback = (resp) => {
+        if (resp.error) { reject(resp.error); return; }
+        const expiry = Date.now() + 55 * 60 * 1000;
+        setToken(resp.access_token);
+        localStorage.setItem('triptoken', resp.access_token);
+        localStorage.setItem('triptokenexpiry', expiry.toString());
+        tokenExpiryRef.current = expiry;
+        resolve(resp.access_token);
+      };
+      tokenClientRef.current.requestAccessToken({ prompt: '' });
+    });
+  }, []);
+
+  const getValidToken = useCallback(async () => {
+    if (tokenExpiryRef.current && Date.now() < tokenExpiryRef.current - 60000) {
+      return token;
+    }
+    try {
+      const newToken = await refreshToken();
+      return newToken;
+    } catch {
+      return token;
+    }
+  }, [token, refreshToken]);
 
   const handleLogin = () => {
     if (!window.google) return;
@@ -41,8 +73,12 @@ export default function App() {
       scope: SCOPES,
       callback: async (resp) => {
         if (resp.error) return;
+        const expiry = Date.now() + 55 * 60 * 1000;
         setToken(resp.access_token);
         localStorage.setItem('triptoken', resp.access_token);
+        localStorage.setItem('triptokenexpiry', expiry.toString());
+        tokenExpiryRef.current = expiry;
+        tokenClientRef.current = client;
         const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
           headers: { Authorization: `Bearer ${resp.access_token}` }
         });
@@ -52,15 +88,19 @@ export default function App() {
         localStorage.setItem('tripuser', JSON.stringify(u));
       }
     });
+    tokenClientRef.current = client;
     client.requestAccessToken();
   };
 
   const handleLogout = () => {
-    setUser(null); setToken(null);
+    setUser(null);
+    setToken(null);
+    tokenExpiryRef.current = null;
     localStorage.removeItem('tripuser');
     localStorage.removeItem('triptoken');
-    localStorage.removeItem('tripbooks');
-    setBooks([]);
+    localStorage.removeItem('triptokenexpiry');
+    // 帳本清單保留，不刪除
+    setView('books');
   };
 
   const saveBooks = (b) => {
@@ -98,9 +138,10 @@ export default function App() {
   const createBook = async (name, startDate, endDate, people) => {
     setLoading(true);
     try {
+      const t = await getValidToken();
       const res = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           properties: { title: `出遊記帳 - ${name}` },
           sheets: [{
@@ -123,10 +164,10 @@ export default function App() {
       const sheet = await res.json();
       const sheetId = sheet.spreadsheetId;
       try {
-        const folderId = await getOrCreateFolder(token);
+        const folderId = await getOrCreateFolder(t);
         await fetch(`https://www.googleapis.com/drive/v3/files/${sheetId}?addParents=${folderId}&removeParents=root`, {
           method: 'PATCH',
-          headers: { Authorization: `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${t}` }
         });
       } catch (e) { console.warn('移動資料夾失敗'); }
       const book = { id: sheetId, name, startDate, endDate, people, createdAt: Date.now() };
@@ -134,7 +175,7 @@ export default function App() {
       setActiveBook(book);
       setEntries([]);
       setView('detail');
-    } catch (e) { alert('建立失敗，請檢查授權'); }
+    } catch (e) { alert('建立失敗，請重新登入'); }
     setLoading(false);
   };
 
@@ -145,8 +186,9 @@ export default function App() {
     if (books.find(b => b.id === sheetId)) { alert('這個帳本已經在清單裡了'); return; }
     setLoading(true);
     try {
+      const t = await getValidToken();
       const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=properties.title`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${t}` } }
       );
       const data = await res.json();
       const rawTitle = data.properties?.title || '';
@@ -161,12 +203,13 @@ export default function App() {
   };
 
   const loadEntries = useCallback(async (book) => {
-    if (!token || !book) return;
+    if (!book) return;
     setLoading(true);
     try {
+      const t = await getValidToken();
       const res = await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${book.id}/values/記帳!A2:J`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${t}` } }
       );
       const data = await res.json();
       const rows = (data.values || []).map((r, i) => ({
@@ -177,17 +220,18 @@ export default function App() {
       setEntries(rows);
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, [token]);
+  }, [getValidToken]);
 
   const addEntry = async (entry) => {
-    if (!token || !activeBook) return;
+    if (!activeBook) return;
     setLoading(true);
     try {
+      const t = await getValidToken();
       await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${activeBook.id}/values/記帳!A:J:append?valueInputOption=USER_ENTERED`,
         {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ values: [[
             entry.date, entry.item, entry.twd||'', entry.jpy||'',
             entry.method, entry.card, entry.payer, entry.category, entry.note, entry.splitType||'團體'
@@ -196,23 +240,24 @@ export default function App() {
       );
       await loadEntries(activeBook);
       setView('detail');
-    } catch (e) { alert('新增失敗'); }
+    } catch (e) { alert('新增失敗，請重新登入後再試'); }
     setLoading(false);
   };
 
   const deleteEntry = async (rowIndex) => {
-    if (!token || !activeBook) return;
+    if (!activeBook) return;
     setLoading(true);
     try {
+      const t = await getValidToken();
       const sheetRes = await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${activeBook.id}?fields=sheets.properties`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${t}` } }
       );
       const sheetData = await sheetRes.json();
       const sheetId = sheetData.sheets[0].properties.sheetId;
       await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${activeBook.id}:batchUpdate`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           requests: [{
             deleteDimension: {
