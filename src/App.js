@@ -143,7 +143,15 @@ export default function App() {
     loadEntries(book);
     setView('detail');
   };
-
+  
+useEffect(() => {
+    if (!activeBook || view !== 'detail') return;
+    const timer = setInterval(() => {
+      loadEntries(activeBook);
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [activeBook, view, loadEntries]);
+  
   if (!user) {
     return (
       <div className="login-screen">
