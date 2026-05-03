@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 const CAT_ICON = { 餐飲: '🍜', 購物: '🛍', 交通: '🚗', 住宿: '🏨', 娛樂: '🎡', 其他: '📌' };
 
-export default function BookDetail({ book, entries, onAdd, onRefresh }) {
+export default function BookDetail({ book, entries, onAdd, onRefresh, onDelete }) {
+  const [confirmId, setConfirmId] = useState(null);
+
   const totalTwd = entries.reduce((s, e) => s + (parseFloat(e.twd) || 0), 0);
   const totalJpy = entries.reduce((s, e) => s + (parseFloat(e.jpy) || 0), 0);
 
@@ -70,6 +72,16 @@ export default function BookDetail({ book, entries, onAdd, onRefresh }) {
               <div className="entry-payer">
                 {e.payer && <span className={`pill ${payerColor(e.payer)}`}>{e.payer}</span>}
               </div>
+            </div>
+            <div className="entry-delete">
+              {confirmId === e.id ? (
+                <div className="delete-confirm">
+                  <button className="del-yes" onClick={() => { onDelete(entries.length - 1 - i); setConfirmId(null); }}>確認</button>
+                  <button className="del-no" onClick={() => setConfirmId(null)}>取消</button>
+                </div>
+              ) : (
+                <button className="del-btn" onClick={() => setConfirmId(e.id)}>✕</button>
+              )}
             </div>
           </div>
         ))
