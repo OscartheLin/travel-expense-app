@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 
-export default function BookList({ books, onOpen, onCreate, loading }) {
+export default function BookList({ books, onOpen, onCreate, onJoin, loading }) {
   const [showModal, setShowModal] = useState(false);
+  const [showJoin, setShowJoin] = useState(false);
   const [form, setForm] = useState({ name: '', startDate: '', endDate: '', people: '' });
+  const [joinUrl, setJoinUrl] = useState('');
 
   const handleCreate = () => {
     if (!form.name.trim()) return;
@@ -11,9 +13,17 @@ export default function BookList({ books, onOpen, onCreate, loading }) {
     setForm({ name: '', startDate: '', endDate: '', people: '' });
   };
 
+  const handleJoin = () => {
+    if (!joinUrl.trim()) return;
+    onJoin(joinUrl.trim());
+    setShowJoin(false);
+    setJoinUrl('');
+  };
+
   return (
     <div className="book-list">
       <button className="new-book-card" onClick={() => setShowModal(true)}>＋ 新增帳本</button>
+      <button className="join-book-card" onClick={() => setShowJoin(true)}>🔗 用連結加入帳本</button>
 
       {books.length === 0 && (
         <div className="empty-state">
@@ -30,8 +40,8 @@ export default function BookList({ books, onOpen, onCreate, loading }) {
             {book.people && ` ・ ${book.people}`}
           </div>
           <div className="book-card-footer">
-            <span>點擊進入記帳</span>
-            <span className="status-pill status-active">進行中</span>
+            <span>{book.joined ? '共用帳本' : '點擊進入記帳'}</span>
+            <span className="status-pill status-active">{book.joined ? '已加入' : '進行中'}</span>
           </div>
         </div>
       ))}
@@ -63,6 +73,26 @@ export default function BookList({ books, onOpen, onCreate, loading }) {
               {loading ? '建立中...' : '建立帳本'}
             </button>
             <button className="btn-cancel" onClick={() => setShowModal(false)}>取消</button>
+          </div>
+        </div>
+      )}
+
+      {showJoin && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setShowJoin(false)}>
+          <div className="modal">
+            <h2>用連結加入帳本</h2>
+            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 16 }}>
+              請對方把 Google Sheets 的網址傳給你，貼在下方
+            </p>
+            <div className="form-group">
+              <label className="form-label">Google Sheets 網址</label>
+              <input className="form-input" placeholder="https://docs.google.com/spreadsheets/d/..." value={joinUrl}
+                onChange={e => setJoinUrl(e.target.value)} />
+            </div>
+            <button className="btn-primary" onClick={handleJoin} disabled={!joinUrl.trim() || loading}>
+              {loading ? '加入中...' : '加入帳本'}
+            </button>
+            <button className="btn-cancel" onClick={() => setShowJoin(false)}>取消</button>
           </div>
         </div>
       )}
