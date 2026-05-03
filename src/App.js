@@ -7,7 +7,7 @@ import './App.css';
 
 const CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || 'YOUR_GOOGLE_CLIENT_ID';
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
-const FOLDER_PATH = ['企投', '出遊記帳'];
+const FOLDER_PATH = ['出遊記帳'];
 
 export default function App() {
   const [user, setUser] = useState(null);
