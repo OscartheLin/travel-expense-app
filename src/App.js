@@ -7,11 +7,12 @@ import './App.css';
 
 const CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || 'YOUR_GOOGLE_CLIENT_ID';
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
+const FOLDER_PATH = ['企投', '出遊記帳'];
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
-  const [view, setView] = useState('books'); // books | detail | add | split
+  const [view, setView] = useState('books');
   const [activeBook, setActiveBook] = useState(null);
   const [books, setBooks] = useState([]);
   const [entries, setEntries] = useState([]);
@@ -65,6 +66,33 @@ export default function App() {
     localStorage.setItem('tripbooks', JSON.stringify(b));
   };
 
+  const getOrCreateFolder = async (t) => {
+    let parentId = 'root';
+    for (const folderName of FOLDER_PATH) {
+      const searchRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=name='${folderName}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`,
+        { headers: { Authorization: `Bearer ${t}` } }
+      );
+      const searchData = await searchRes.json();
+      if (searchData.files && searchData.files.length > 0) {
+        parentId = searchData.files[0].id;
+      } else {
+        const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: folderName,
+            mimeType: 'application/vnd.google-apps.folder',
+            parents: [parentId]
+          })
+        });
+        const folder = await createRes.json();
+        parentId = folder.id;
+      }
+    }
+    return parentId;
+  };
+
   const createBook = async (name, startDate, endDate, people) => {
     setLoading(true);
     try {
@@ -90,12 +118,41 @@ export default function App() {
         })
       });
       const sheet = await res.json();
-      const book = { id: sheet.spreadsheetId, name, startDate, endDate, people, createdAt: Date.now() };
+      const sheetId = sheet.spreadsheetId;
+      try {
+        const folderId = await getOrCreateFolder(token);
+        await fetch(`https://www.googleapis.com/drive/v3/files/${sheetId}?addParents=${folderId}&removeParents=root`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      } catch (e) { console.warn('移動資料夾失敗'); }
+      const book = { id: sheetId, name, startDate, endDate, people, createdAt: Date.now() };
       saveBooks([book, ...books]);
       setActiveBook(book);
       setEntries([]);
       setView('detail');
     } catch (e) { alert('建立失敗，請檢查授權'); }
+    setLoading(false);
+  };
+
+  const joinBookByUrl = async (url) => {
+    const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (!match) { alert('連結格式不正確，請貼上完整的 Google Sheets 網址'); return; }
+    const sheetId = match[1];
+    if (books.find(b => b.id === sheetId)) { alert('這個帳本已經在清單裡了'); return; }
+    setLoading(true);
+    try {
+      const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=properties.title`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await res.json();
+      const title = data.properties?.title?.replace('出遊記帳 - ', '') || '共用帳本';
+      const book = { id: sheetId, name: title, startDate: '', endDate: '', people: '', createdAt: Date.now(), joined: true };
+      saveBooks([book, ...books]);
+      setActiveBook(book);
+      await loadEntries(book);
+      setView('detail');
+    } catch (e) { alert('加入失敗，請確認你有這個試算表的存取權限'); }
     setLoading(false);
   };
 
@@ -138,25 +195,56 @@ export default function App() {
     setLoading(false);
   };
 
+  const deleteEntry = async (rowIndex) => {
+    if (!token || !activeBook) return;
+    setLoading(true);
+    try {
+      const sheetRes = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${activeBook.id}?fields=sheets.properties`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const sheetData = await sheetRes.json();
+      const sheetId = sheetData.sheets[0].properties.sheetId;
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${activeBook.id}:batchUpdate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requests: [{
+            deleteDimension: {
+              range: {
+                sheetId,
+                dimension: 'ROWS',
+                startIndex: rowIndex + 1,
+                endIndex: rowIndex + 2
+              }
+            }
+          }]
+        })
+      });
+      await loadEntries(activeBook);
+    } catch (e) { alert('刪除失敗'); }
+    setLoading(false);
+  };
+
   const openBook = (book) => {
     setActiveBook(book);
     loadEntries(book);
     setView('detail');
   };
-  
-useEffect(() => {
+
+  useEffect(() => {
     if (!activeBook || view !== 'detail') return;
     const timer = setInterval(() => {
       loadEntries(activeBook);
     }, 30000);
     return () => clearInterval(timer);
   }, [activeBook, view, loadEntries]);
-  
+
   if (!user) {
     return (
       <div className="login-screen">
         <div className="login-card">
-          <div className="app-icon">✈</div>
+          <div className="app-icon">📒</div>
           <h1>出遊記帳</h1>
           <p>多人即時同步，旅行記帳不漏接</p>
           <button className="btn-google" onClick={handleLogin} disabled={!gapiReady}>
@@ -190,10 +278,10 @@ useEffect(() => {
         {loading && <div className="loading-bar" />}
 
         {view === 'books' && (
-          <BookList books={books} onOpen={openBook} onCreate={createBook} loading={loading} />
+          <BookList books={books} onOpen={openBook} onCreate={createBook} onJoin={joinBookByUrl} loading={loading} />
         )}
         {view === 'detail' && activeBook && (
-          <BookDetail book={activeBook} entries={entries} onAdd={() => setView('add')} onRefresh={() => loadEntries(activeBook)} />
+          <BookDetail book={activeBook} entries={entries} onAdd={() => setView('add')} onRefresh={() => loadEntries(activeBook)} onDelete={deleteEntry} />
         )}
         {view === 'add' && activeBook && (
           <AddEntry book={activeBook} onSave={addEntry} onCancel={() => setView('detail')} />
