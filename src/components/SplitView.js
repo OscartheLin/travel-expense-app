@@ -44,7 +44,24 @@ export default function SplitView({ book, entries }) {
   const perPerson = grandTotal / Math.max(people.length, 1);
   const fmt = (n) => Math.round(n).toLocaleString();
 
-  const shareUrl = window.location.href;
+  const settlements = (() => {
+    const payers = people.map(p => ({ person: p, balance: (stats[p]?.total || 0) - perPerson }));
+    const debtors = payers.filter(b => b.balance < -0.5).map(b => ({ ...b }));
+    const creditors = payers.filter(b => b.balance > 0.5).map(b => ({ ...b }));
+    const result = [];
+    let i = 0, j = 0;
+    while (i < debtors.length && j < creditors.length) {
+      const amount = Math.min(Math.abs(debtors[i].balance), creditors[j].balance);
+      result.push({ from: debtors[i].person, to: creditors[j].person, amount });
+      debtors[i].balance += amount;
+      creditors[j].balance -= amount;
+      if (Math.abs(debtors[i].balance) < 0.5) i++;
+      if (Math.abs(creditors[j].balance) < 0.5) j++;
+    }
+    return result;
+  })();
+
+  const shareUrl = `https://docs.google.com/spreadsheets/d/${book.id}`;
   const handleCopy = () => {
     navigator.clipboard.writeText(shareUrl).then(() => {
       setCopied(true);
@@ -101,23 +118,19 @@ export default function SplitView({ book, entries }) {
           <div><div className="split-label">每人應付</div><div className="split-sub">平均分攤</div></div>
           <div className="split-amt">NT${fmt(perPerson)}</div>
         </div>
-        {people.map(p => {
-          const diff = (stats[p]?.total || 0) - perPerson;
-          if (Math.abs(diff) < 1) return null;
-          return (
-            <div key={p} className="split-row">
-              <div>
-                <div className="split-label">
-                  {diff > 0 ? `其他人補給 ${p}` : `${p} 補給其他人`}
-                </div>
-                <div className="split-sub">{p} {diff > 0 ? '多付了' : '少付了'}</div>
-              </div>
-              <div className={`split-amt ${diff > 0 ? 'pos' : 'neg'}`}>
-                NT${fmt(Math.abs(diff))}
-              </div>
+        {settlements.length === 0 ? (
+          <div className="split-row">
+            <div className="split-label" style={{ color: '#0F6E56' }}>已平帳，無需轉帳</div>
+          </div>
+        ) : settlements.map((s, idx) => (
+          <div key={idx} className="split-row">
+            <div>
+              <div className="split-label"><span style={{ color: '#A32D2D' }}>{s.from}</span> → <span style={{ color: '#0F6E56' }}>{s.to}</span></div>
+              <div className="split-sub">{s.from} 付給 {s.to}</div>
             </div>
-          );
-        })}
+            <div className="split-amt">NT${fmt(s.amount)}</div>
+          </div>
+        ))}
       </div>
 
       <div className="split-card">

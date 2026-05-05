@@ -4,9 +4,20 @@ const CATEGORIES = ['餐飲', '購物', '交通', '住宿', '娛樂', '其他'];
 const CARDS = ['台新', '富邦', '元大', '中信', '星展', '其他'];
 const METHODS = ['信用卡', '現金', '西瓜卡'];
 
-export default function AddEntry({ book, onSave, onCancel }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const [form, setForm] = useState({
+export default function AddEntry({ book, onSave, onCancel, initialEntry }) {
+  const today = new Date().toLocaleDateString('en-CA');
+  const [form, setForm] = useState(() => initialEntry ? {
+    date: initialEntry.date || today,
+    item: initialEntry.item || '',
+    currency: initialEntry.jpy ? 'JPY' : 'TWD',
+    amount: initialEntry.jpy || initialEntry.twd || '',
+    method: initialEntry.method || '信用卡',
+    card: initialEntry.card || '',
+    payer: initialEntry.payer || '',
+    category: initialEntry.category || '餐飲',
+    note: initialEntry.note || '',
+    splitType: initialEntry.splitType || '團體'
+  } : {
     date: today, item: '', currency: 'JPY', amount: '',
     method: '信用卡', card: '', payer: '', category: '餐飲', note: '', splitType: '團體'
   });
@@ -130,7 +141,7 @@ export default function AddEntry({ book, onSave, onCancel }) {
       <div style={{ padding: '16px 14px 0' }}>
         <button className="btn-primary" onClick={handleSave}
           disabled={!form.item.trim() || !form.amount || saving}>
-          {saving ? '儲存中...' : '確認新增'}
+          {saving ? '儲存中...' : initialEntry ? '確認更新' : '確認新增'}
         </button>
         <button className="btn-cancel" onClick={onCancel}>取消</button>
       </div>

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 
 const CAT_ICON = { 餐飲: '🍜', 購物: '🛍', 交通: '🚗', 住宿: '🏨', 娛樂: '🎡', 其他: '📌' };
 
-export default function BookDetail({ book, entries, onAdd, onRefresh, onDelete }) {
+export default function BookDetail({ book, entries, onAdd, onRefresh, onDelete, onEdit }) {
   const [confirmId, setConfirmId] = useState(null);
 
   const totalTwd = entries.reduce((s, e) => s + (parseFloat(e.twd) || 0), 0);
@@ -80,7 +80,10 @@ export default function BookDetail({ book, entries, onAdd, onRefresh, onDelete }
                   <button className="del-no" onClick={() => setConfirmId(null)}>取消</button>
                 </div>
               ) : (
-                <button className="del-btn" onClick={() => setConfirmId(e.id)}>✕</button>
+                <>
+                  <button className="edit-btn" onClick={() => onEdit(e)}>✎</button>
+                  <button className="del-btn" onClick={() => setConfirmId(e.id)}>✕</button>
+                </>
               )}
             </div>
           </div>

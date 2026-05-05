@@ -18,6 +18,7 @@ export default function App() {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [gapiReady, setGapiReady] = useState(false);
+  const [editingEntry, setEditingEntry] = useState(null);
   const tokenClientRef = useRef(null);
   const tokenExpiryRef = useRef(null);
 
@@ -271,6 +272,29 @@ export default function App() {
     setLoading(false);
   };
 
+  const updateEntry = async (rowIndex, entry) => {
+    if (!activeBook) return;
+    setLoading(true);
+    try {
+      const t = await getValidToken();
+      await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${activeBook.id}/values/記帳!A${rowIndex + 2}:J${rowIndex + 2}?valueInputOption=USER_ENTERED`,
+        {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [[
+            entry.date, entry.item, entry.twd||'', entry.jpy||'',
+            entry.method, entry.card, entry.payer, entry.category, entry.note, entry.splitType||'團體'
+          ]] })
+        }
+      );
+      await loadEntries(activeBook);
+      setEditingEntry(null);
+      setView('detail');
+    } catch (e) { alert('更新失敗，請重新登入後再試'); }
+    setLoading(false);
+  };
+
   const openBook = (book) => {
     setActiveBook(book);
     loadEntries(book);
@@ -304,10 +328,10 @@ export default function App() {
     <div className="app">
       <div className="topbar">
         {view !== 'books' && (
-          <button className="back-btn" onClick={() => setView(view === 'add' || view === 'split' ? 'detail' : 'books')}>‹</button>
+          <button className="back-btn" onClick={() => { if (view === 'add') { setEditingEntry(null); setView('detail'); } else if (view === 'split') { setView('detail'); } else { setView('books'); } }}>‹</button>
         )}
         <span className="topbar-title">
-          {view === 'books' ? '我的帳本' : view === 'add' ? '新增一筆' : view === 'split' ? '分帳結果' : activeBook?.name || '帳本'}
+          {view === 'books' ? '我的帳本' : view === 'add' ? (editingEntry ? '編輯記錄' : '新增一筆') : view === 'split' ? '分帳結果' : activeBook?.name || '帳本'}
         </span>
         <div className="topbar-right">
           {view === 'detail' && (
@@ -323,10 +347,10 @@ export default function App() {
           <BookList books={books} onOpen={openBook} onCreate={createBook} onJoin={joinBookByUrl} loading={loading} />
         )}
         {view === 'detail' && activeBook && (
-          <BookDetail book={activeBook} entries={entries} onAdd={() => setView('add')} onRefresh={() => loadEntries(activeBook)} onDelete={deleteEntry} />
+          <BookDetail book={activeBook} entries={entries} onAdd={() => setView('add')} onRefresh={() => loadEntries(activeBook)} onDelete={deleteEntry} onEdit={(entry) => { setEditingEntry(entry); setView('add'); }} />
         )}
         {view === 'add' && activeBook && (
-          <AddEntry book={activeBook} onSave={addEntry} onCancel={() => setView('detail')} />
+          <AddEntry book={activeBook} onSave={editingEntry ? (entry) => updateEntry(editingEntry.id, entry) : addEntry} onCancel={() => { setEditingEntry(null); setView('detail'); }} initialEntry={editingEntry} />
         )}
         {view === 'split' && activeBook && (
           <SplitView book={activeBook} entries={entries} />

@@ -123,6 +123,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .join-book-card { border: 0.5px solid #ddd; border-radius: 14px; padding: 12px; text-align: center; font-size: 14px; color: #185FA5; cursor: pointer; margin-bottom: 12px; background: none; width: 100%; }
 .join-book-card:hover { background: #f0f7ff; }
 .entry-delete { flex-shrink: 0; display: flex; align-items: center; margin-left: 4px; }
+.edit-btn { background: none; border: none; color: #ccc; font-size: 14px; cursor: pointer; padding: 4px 6px; border-radius: 6px; margin-right: 2px; }
+.edit-btn:hover { color: #185FA5; background: #E6F1FB; }
 .del-btn { background: none; border: none; color: #ccc; font-size: 14px; cursor: pointer; padding: 4px 6px; border-radius: 6px; }
 .del-btn:hover { color: #A32D2D; background: #FCEBEB; }
 .delete-confirm { display: flex; gap: 4px; }
