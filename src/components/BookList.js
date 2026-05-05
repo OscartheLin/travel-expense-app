@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 
-export default function BookList({ books, onOpen, onCreate, onJoin, loading }) {
+export default function BookList({ books, onOpen, onCreate, onJoin, onDelete, loading }) {
   const [showModal, setShowModal] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [form, setForm] = useState({ name: '', startDate: '', endDate: '', people: '' });
   const [joinUrl, setJoinUrl] = useState('');
 
@@ -33,8 +34,18 @@ export default function BookList({ books, onOpen, onCreate, onJoin, loading }) {
       )}
 
       {books.map(book => (
-        <div key={book.id} className="book-card" onClick={() => onOpen(book)}>
-          <div className="book-card-title">{book.name}</div>
+        <div key={book.id} className="book-card" onClick={() => confirmDeleteId !== book.id && onOpen(book)}>
+          <div className="book-card-header">
+            <div className="book-card-title">{book.name}</div>
+            {confirmDeleteId === book.id ? (
+              <div className="book-delete-confirm">
+                <button className="book-del-yes" onClick={e => { e.stopPropagation(); onDelete(book.id); setConfirmDeleteId(null); }}>移除</button>
+                <button className="book-del-no" onClick={e => { e.stopPropagation(); setConfirmDeleteId(null); }}>取消</button>
+              </div>
+            ) : (
+              <button className="book-del-btn" onClick={e => { e.stopPropagation(); setConfirmDeleteId(book.id); }}>✕</button>
+            )}
+          </div>
           <div className="book-card-meta">
             {book.startDate && book.endDate ? `${book.startDate} – ${book.endDate}` : '日期未設定'}
             {book.people && ` ・ ${book.people}`}

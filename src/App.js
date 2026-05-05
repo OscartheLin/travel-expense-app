@@ -295,6 +295,10 @@ export default function App() {
     setLoading(false);
   };
 
+  const deleteBook = (bookId) => {
+    saveBooks(books.filter(b => b.id !== bookId));
+  };
+
   const openBook = (book) => {
     setActiveBook(book);
     loadEntries(book);
@@ -344,7 +348,7 @@ export default function App() {
       <div className="content">
         {loading && <div className="loading-bar" />}
         {view === 'books' && (
-          <BookList books={books} onOpen={openBook} onCreate={createBook} onJoin={joinBookByUrl} loading={loading} />
+          <BookList books={books} onOpen={openBook} onCreate={createBook} onJoin={joinBookByUrl} onDelete={deleteBook} loading={loading} />
         )}
         {view === 'detail' && activeBook && (
           <BookDetail book={activeBook} entries={entries} onAdd={() => setView('add')} onRefresh={() => loadEntries(activeBook)} onDelete={deleteEntry} onEdit={(entry) => { setEditingEntry(entry); setView('add'); }} />
