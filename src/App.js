@@ -280,6 +280,21 @@ const writeMetaSheet = async (token, sheetId, book) => {
   );
 };
 
+// ── Auth helpers ──────────────────────────────────────────────────────────────
+
+// Parse access_token from URL hash (returned by Google redirect flow)
+const parseHashToken = () => {
+  const hash = window.location.hash.slice(1);
+  if (!hash || !hash.includes('access_token')) return null;
+  return Object.fromEntries(hash.split('&').map(p => { const [k,v]=p.split('='); return [k, decodeURIComponent(v||'')]; }));
+};
+
+// iOS Safari and standalone PWA cannot open popups → must use redirect flow
+const needsRedirectAuth = () =>
+  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  window.matchMedia('(display-mode: standalone)').matches ||
+  !!window.navigator.standalone;
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -305,6 +320,7 @@ export default function App() {
     localStorage.setItem('triprates', JSON.stringify(newRates));
   };
   const [metaLoading, setMetaLoading] = useState(false);
+  const [needsRelogin, setNeedsRelogin] = useState(false);
   const tokenClientRef = useRef(null);
   const tokenExpiryRef = useRef(null);
   const syncTimerRef = useRef(null);
@@ -314,6 +330,28 @@ export default function App() {
     script.src = 'https://accounts.google.com/gsi/client';
     script.onload = () => setGapiReady(true);
     document.body.appendChild(script);
+
+    // Check if returning from Google redirect-based OAuth
+    const hashParams = parseHashToken();
+    if (hashParams?.access_token) {
+      window.history.replaceState(null, '', window.location.pathname);
+      const expiry = Date.now() + (parseInt(hashParams.expires_in) || 3300) * 1000;
+      const accessToken = hashParams.access_token;
+      setToken(accessToken);
+      localStorage.setItem('triptoken', accessToken);
+      localStorage.setItem('triptokenexpiry', String(expiry));
+      tokenExpiryRef.current = expiry;
+      fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      }).then(r => r.json()).then(info => {
+        const u = { name: info.name, email: info.email, picture: info.picture };
+        setUser(u);
+        localStorage.setItem('tripuser', JSON.stringify(u));
+        setBooks(loadUserBooks(u.email));
+      }).catch(() => {});
+      return;
+    }
+
     const storedUser = localStorage.getItem('tripuser');
     const storedToken = localStorage.getItem('triptoken');
     const storedExpiry = localStorage.getItem('triptokenexpiry');
@@ -328,9 +366,19 @@ export default function App() {
 
   const refreshToken = useCallback(() => {
     return new Promise((resolve, reject) => {
-      if (!tokenClientRef.current) { reject('no client'); return; }
+      if (!tokenClientRef.current) {
+        // Mobile redirect flow: no GIS client available, prompt re-login
+        setNeedsRelogin(true);
+        reject('no client');
+        return;
+      }
       tokenClientRef.current.callback = (resp) => {
-        if (resp.error) { reject(resp.error); return; }
+        if (resp.error) {
+          setNeedsRelogin(true);
+          reject(resp.error);
+          return;
+        }
+        setNeedsRelogin(false);
         const expiry = Date.now() + 55 * 60 * 1000;
         setToken(resp.access_token);
         localStorage.setItem('triptoken', resp.access_token);
@@ -359,6 +407,20 @@ export default function App() {
   }, [getValidToken]);
 
   const handleLogin = () => {
+    // iOS Safari and standalone PWA block popups → use redirect OAuth flow
+    if (needsRedirectAuth()) {
+      const params = new URLSearchParams({
+        client_id: CLIENT_ID,
+        redirect_uri: window.location.origin + '/',
+        response_type: 'token',
+        scope: SCOPES,
+        include_granted_scopes: 'true',
+      });
+      window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
+      return;
+    }
+
+    // Desktop: use GIS popup
     if (!window.google) return;
     const client = window.google.accounts.oauth2.initTokenClient({
       client_id: CLIENT_ID,
@@ -950,6 +1012,15 @@ export default function App() {
       </div>
 
       <div className="content">
+        {needsRelogin && (
+          <div style={{ background:'#FFF3CD', borderBottom:'1px solid #FFD700', padding:'10px 16px', fontSize:13, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <span>登入已過期，請重新登入</span>
+            <button onClick={handleLogin}
+              style={{ background:'#185FA5', color:'#fff', border:'none', borderRadius:8, padding:'5px 14px', fontSize:13, cursor:'pointer' }}>
+              重新登入
+            </button>
+          </div>
+        )}
         {loading && <div className="loading-bar" />}
         {view === 'books' && (
           <BookList books={books} onOpen={openBook} onCreate={createBook} onJoin={joinBookByUrl} onDelete={deleteBook} loading={loading} />

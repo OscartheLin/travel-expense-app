@@ -1,11 +1,16 @@
-const CACHE = 'trip-expense-v1';
+const CACHE = 'trip-expense-v2';
 
-// App shell files to cache on install
-const PRECACHE = ['/', '/index.html'];
+const SKIP_CACHE = [
+  'googleapis.com',
+  'accounts.google.com',
+  'generativelanguage.googleapis.com',
+  'open-meteo.com',
+  'cdn.jsdelivr.net',
+];
 
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(PRECACHE)).then(() => self.skipWaiting())
+    caches.open(CACHE).then(c => c.addAll(['/', '/index.html'])).then(() => self.skipWaiting())
   );
 });
 
@@ -19,25 +24,29 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const url = e.request.url;
-  // 不快取：Google API、帳號系統、非 GET 請求
-  if (
-    url.includes('googleapis.com') ||
-    url.includes('accounts.google.com') ||
-    url.includes('generativelanguage.googleapis.com') ||
-    e.request.method !== 'GET'
-  ) {
+  if (e.request.method !== 'GET') return;
+  if (SKIP_CACHE.some(s => url.includes(s))) return;
+
+  // HTML → network-first so we always get the latest app shell
+  if (e.request.headers.get('accept')?.includes('text/html')) {
+    e.respondWith(
+      fetch(e.request)
+        .then(res => { caches.open(CACHE).then(c => c.put(e.request, res.clone())); return res; })
+        .catch(() => caches.match(e.request))
+    );
     return;
   }
 
+  // JS/CSS/images → cache-first (hashed filenames ensure freshness)
   e.respondWith(
     caches.match(e.request).then(cached => {
-      const network = fetch(e.request).then(res => {
+      if (cached) return cached;
+      return fetch(e.request).then(res => {
         if (res && res.status === 200) {
           caches.open(CACHE).then(c => c.put(e.request, res.clone()));
         }
         return res;
-      }).catch(() => cached);
-      return cached || network;
+      });
     })
   );
 });
