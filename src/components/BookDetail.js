@@ -1,20 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import Avatar from './Avatar';
 
 const CAT_ICON = { 餐飲: '🍜', 購物: '🛍', 交通: '🚗', 住宿: '🏨', 娛樂: '🎡', 其他: '📌' };
 const CAT_ORDER = ['餐飲', '購物', '交通', '住宿', '娛樂', '其他'];
+const CURRENCY_SYMBOL = { JPY:'¥', KRW:'₩', THB:'฿', HKD:'HK$', SGD:'S$', USD:'$', EUR:'€', GBP:'£', AUD:'A$', MYR:'RM', VND:'₫', CNY:'CN¥', TWD:'NT$' };
 
-export default function BookDetail({ book, entries, onAdd, onRefresh, onDelete, onEdit }) {
+export default function BookDetail({ book, entries, rates, onAdd, onRefresh, onDelete, onEdit }) {
   const [confirmId, setConfirmId] = useState(null);
 
-  const totalTwd = entries.reduce((s, e) => s + (parseFloat(e.twd) || 0), 0);
-  const totalJpy = entries.reduce((s, e) => s + (parseFloat(e.jpy) || 0), 0);
+  const people = useMemo(() => {
+    if (book.people) return book.people.split(/[,，、]/).map(s => s.trim()).filter(Boolean);
+    return [...new Set(entries.map(e => e.payer).filter(Boolean))];
+  }, [book, entries]);
+
+  const toTwd = (e) => (parseFloat(e.amount) || 0) * (rates[e.currency] || 1);
+  const totalTwd = entries.reduce((s, e) => s + toTwd(e), 0);
 
   const catStats = {};
   entries.forEach(e => {
     const cat = e.category || '其他';
-    if (!catStats[cat]) catStats[cat] = { twd: 0, jpy: 0 };
-    catStats[cat].twd += parseFloat(e.twd) || 0;
-    catStats[cat].jpy += parseFloat(e.jpy) || 0;
+    if (!catStats[cat]) catStats[cat] = 0;
+    catStats[cat] += toTwd(e);
   });
 
   const sortedEntries = [...entries].sort((a, b) => {
@@ -24,12 +30,10 @@ export default function BookDetail({ book, entries, onAdd, onRefresh, onDelete, 
     return b.date.localeCompare(a.date);
   });
 
-  const payerColor = (payer) => {
-    if (!payer) return '';
-    const p = payer.trim();
-    if (p === '婷' || p === '美眉') return 'pill-ting';
-    if (p === '珽') return 'pill-ding';
-    return 'pill-cash';
+  const getPayerIndex = (payer) => {
+    if (!payer) return 0;
+    const idx = people.indexOf(payer.trim());
+    return idx >= 0 ? idx : people.length % 6;
   };
 
   const methodPill = (method) => {
@@ -39,18 +43,25 @@ export default function BookDetail({ book, entries, onAdd, onRefresh, onDelete, 
     return 'pill-card';
   };
 
+  const fmtAmount = (e) => {
+    const amt = parseFloat(e.amount);
+    if (!amt) return '-';
+    const sym = CURRENCY_SYMBOL[e.currency] || e.currency;
+    return `${sym}${amt.toLocaleString()}`;
+  };
+
   return (
     <div>
       <div className="summary-grid">
         <div className="stat-card">
-          <div className="stat-label">台幣總支出</div>
-          <div className="stat-num">{totalTwd.toLocaleString()}</div>
+          <div className="stat-label">台幣換算總支出</div>
+          <div className="stat-num">{Math.round(totalTwd).toLocaleString()}</div>
           <div className="stat-sub">TWD</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">日幣總支出</div>
-          <div className="stat-num">{totalJpy.toLocaleString()}</div>
-          <div className="stat-sub">JPY</div>
+          <div className="stat-label">總筆數</div>
+          <div className="stat-num">{entries.length}</div>
+          <div className="stat-sub">筆</div>
         </div>
       </div>
 
@@ -60,11 +71,7 @@ export default function BookDetail({ book, entries, onAdd, onRefresh, onDelete, 
             <div key={cat} className="cat-stat-chip">
               <span className="cat-stat-icon">{CAT_ICON[cat]}</span>
               <span className="cat-stat-name">{cat}</span>
-              <span className="cat-stat-amt">
-                {catStats[cat].twd ? `NT$${Math.round(catStats[cat].twd).toLocaleString()}` : ''}
-                {catStats[cat].twd && catStats[cat].jpy ? <br /> : ''}
-                {catStats[cat].jpy ? `¥${Math.round(catStats[cat].jpy).toLocaleString()}` : ''}
-              </span>
+              <span className="cat-stat-amt">NT${Math.round(catStats[cat]).toLocaleString()}</span>
             </div>
           ))}
         </div>
@@ -90,6 +97,9 @@ export default function BookDetail({ book, entries, onAdd, onRefresh, onDelete, 
               <div className="entry-name">{e.item || '（未命名）'}</div>
               <div className="entry-meta">
                 {e.date && <span>{e.date}</span>}
+                {e.currency && e.currency !== 'TWD' && (
+                  <span className="pill pill-ic">{e.currency}</span>
+                )}
                 {(e.method || e.card) && (
                   <span className={`pill ${methodPill(e.method)}`}>
                     {e.card || e.method}
@@ -99,11 +109,9 @@ export default function BookDetail({ book, entries, onAdd, onRefresh, onDelete, 
               {e.note && <div className="entry-note">{e.note}</div>}
             </div>
             <div className="entry-right">
-              <div className="entry-amount">
-                {e.jpy ? `¥${parseFloat(e.jpy).toLocaleString()}` : e.twd ? `NT$${parseFloat(e.twd).toLocaleString()}` : '-'}
-              </div>
-              <div className="entry-payer">
-                {e.payer && <span className={`pill ${payerColor(e.payer)}`}>{e.payer}</span>}
+              <div className="entry-amount">{fmtAmount(e)}</div>
+              <div className="entry-payer" style={{ display:'flex', justifyContent:'flex-end', marginTop:4 }}>
+                {e.payer && <Avatar name={e.payer} index={getPayerIndex(e.payer)} size={20} />}
               </div>
             </div>
             <div className="entry-delete">
