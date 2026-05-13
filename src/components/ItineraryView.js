@@ -190,6 +190,7 @@ export default function ItineraryView({ book, journal, onSaveJournal, docs, onSa
   const [editStopNote, setEditStopNote]   = useState('');
   const [weatherCities, setWeatherCities]     = useState({});
   const [weatherLoadingDay, setWeatherLoadingDay] = useState(null);
+  const [viewMode, setViewMode]               = useState('edit'); // 'edit' | 'read'
 
   const timers   = useRef({});
   const docFileRef = useRef(null);
@@ -439,12 +440,22 @@ export default function ItineraryView({ book, journal, onSaveJournal, docs, onSa
 
   return (
     <div style={{ padding: '0 14px 20px' }}>
-      <p style={{ fontSize:12, color:'#888', padding:'12px 0 6px', lineHeight:1.7 }}>
-        共 {days.length} 天 · 點開每天新增地點、貼地圖連結、掃描文件
-      </p>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 0 6px' }}>
+        <p style={{ fontSize:12, color:'#888', lineHeight:1.7, margin:0 }}>
+          共 {days.length} 天
+          {viewMode === 'edit' && ' · 點開每天新增地點、貼地圖連結、掃描文件'}
+        </p>
+        <button
+          className={`view-mode-toggle ${viewMode === 'read' ? 'read-active' : ''}`}
+          onClick={() => setViewMode(m => m === 'edit' ? 'read' : 'edit')}
+        >
+          {viewMode === 'edit' ? '👁 閱讀' : '✎ 編輯'}
+        </button>
+      </div>
+
       {days.map((date, dayIdx) => {
         const wd      = WEEKDAY[new Date(date + 'T00:00:00').getDay()];
-        const isExp   = expandedDay === date;
+        const isExp   = viewMode === 'read' || expandedDay === date;
         const exp     = dailyExpenses[date];
         const stops   = getStops(date);
         const dd      = dayDocs(date);
@@ -457,7 +468,7 @@ export default function ItineraryView({ book, journal, onSaveJournal, docs, onSa
         return (
           <div key={date} className={`itinerary-card itinerary-card-col${isToday ? ' itinerary-day-today' : ''}`}>
             {/* Header */}
-            <div className="itinerary-seg-header" onClick={() => setExpandedDay(isExp ? null : date)}>
+            <div className="itinerary-seg-header" onClick={() => viewMode === 'edit' && setExpandedDay(isExp ? null : date)}>
               <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                 <div className="journal-day-badge" style={{ minWidth:52, textAlign:'center' }}>Day {dayIdx + 1}</div>
                 <div>
@@ -483,7 +494,7 @@ export default function ItineraryView({ book, journal, onSaveJournal, docs, onSa
                     {[stops.length > 0 && `${stops.length}站`, dd.length > 0 && `${dd.length}件`].filter(Boolean).join('·')}
                   </span>
                 )}
-                <span className="seg-chevron">{isExp ? '▲' : '▼'}</span>
+                {viewMode === 'edit' && <span className="seg-chevron">{isExp ? '▲' : '▼'}</span>}
               </div>
             </div>
 
@@ -498,15 +509,15 @@ export default function ItineraryView({ book, journal, onSaveJournal, docs, onSa
                     const isDropTarget = dragInfo?.date === date && dragOverIdx === idx && dragInfo?.idx !== idx;
                     return (
                       <div key={idx}
-                        className={`stop-row${isDropTarget ? ' stop-drop-target' : ''}`}
-                        draggable={!isEditing}
+                        className={`stop-row${isDropTarget ? ' stop-drop-target' : ''}${viewMode === 'read' ? ' stop-row-read' : ''}`}
+                        draggable={viewMode === 'edit' && !isEditing}
                         onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; handleDragStart(date, idx); }}
                         onDragOver={e => handleDragOver(e, idx)}
                         onDrop={e => handleDrop(e, date, idx)}
                         onDragEnd={handleDragEnd}
                         style={isDragging ? { opacity: 0.4 } : {}}
                       >
-                        {isEditing ? (
+                        {viewMode === 'edit' && isEditing ? (
                           <div className="stop-edit-form">
                             <div className="stop-edit-top">
                               <span className="stop-bullet">📍</span>
@@ -534,7 +545,7 @@ export default function ItineraryView({ book, journal, onSaveJournal, docs, onSa
                           </div>
                         ) : (
                           <>
-                            <span className="stop-drag-handle">⠿</span>
+                            {viewMode === 'edit' && <span className="stop-drag-handle">⠿</span>}
                             <span className="stop-bullet">📍</span>
                             <div className="stop-content">
                               <span className="stop-text">{stop.text}</span>
@@ -544,91 +555,110 @@ export default function ItineraryView({ book, journal, onSaveJournal, docs, onSa
                               <a href={stop.mapUrl} target="_blank" rel="noopener noreferrer"
                                 className="stop-map-btn" onClick={e => e.stopPropagation()} title="開啟地圖">🗺</a>
                             )}
-                            <div className="stop-actions">
-                              <button className="edit-btn" onClick={e => { e.stopPropagation(); startEditStop(date, idx); }}>✎</button>
-                              <button className="del-btn" onClick={e => { e.stopPropagation(); handleDeleteStop(date, idx); }}>✕</button>
-                            </div>
+                            {viewMode === 'edit' && (
+                              <div className="stop-actions">
+                                <button className="edit-btn" onClick={e => { e.stopPropagation(); startEditStop(date, idx); }}>✎</button>
+                                <button className="del-btn" onClick={e => { e.stopPropagation(); handleDeleteStop(date, idx); }}>✕</button>
+                              </div>
+                            )}
                           </>
                         )}
                       </div>
                     );
                   })}
 
-                  <div className="stop-add-row">
-                    <span style={{ fontSize:16, flexShrink:0, opacity:0.3 }}>📍</span>
-                    <input className="stop-add-input"
-                      placeholder="新增地點或行程（按 Enter 送出）"
-                      value={newStopInputs[date] || ''}
-                      onChange={e => setNewStopInputs(n => ({ ...n, [date]: e.target.value }))}
-                      onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleAddStop(date); }} />
-                    <button className="stop-add-btn" onClick={() => handleAddStop(date)}
-                      disabled={!(newStopInputs[date] || '').trim()}>＋</button>
-                  </div>
+                  {viewMode === 'edit' && (
+                    <div className="stop-add-row">
+                      <span style={{ fontSize:16, flexShrink:0, opacity:0.3 }}>📍</span>
+                      <input className="stop-add-input"
+                        placeholder="新增地點或行程（按 Enter 送出）"
+                        value={newStopInputs[date] || ''}
+                        onChange={e => setNewStopInputs(n => ({ ...n, [date]: e.target.value }))}
+                        onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleAddStop(date); }} />
+                      <button className="stop-add-btn" onClick={() => handleAddStop(date)}
+                        disabled={!(newStopInputs[date] || '').trim()}>＋</button>
+                    </div>
+                  )}
                 </div>
 
-                {/* Per-day weather */}
-                <div className="weather-row" style={{ margin:'8px 0 4px' }}>
-                  <span style={{ fontSize:14 }}>🌤</span>
-                  <input className="weather-city-input"
-                    placeholder="輸入城市查當天天氣（英文，例：Shanghai）"
-                    value={weatherCities[date] || ''}
-                    onChange={e => setWeatherCities(c => ({ ...c, [date]: e.target.value }))}
-                    onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) fetchWeatherForDay(date); }}
-                  />
-                  <button className="weather-fetch-btn"
-                    onClick={() => fetchWeatherForDay(date)}
-                    disabled={!(weatherCities[date] || '').trim() || weatherLoadingDay === date}>
-                    {weatherLoadingDay === date ? '⏳' : '查天氣'}
-                  </button>
-                </div>
+                {/* Per-day weather (edit mode only) */}
+                {viewMode === 'edit' && (
+                  <div className="weather-row" style={{ margin:'8px 0 4px' }}>
+                    <span style={{ fontSize:14 }}>🌤</span>
+                    <input className="weather-city-input"
+                      placeholder="輸入城市查當天天氣（英文，例：Shanghai）"
+                      value={weatherCities[date] || ''}
+                      onChange={e => setWeatherCities(c => ({ ...c, [date]: e.target.value }))}
+                      onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) fetchWeatherForDay(date); }}
+                    />
+                    <button className="weather-fetch-btn"
+                      onClick={() => fetchWeatherForDay(date)}
+                      disabled={!(weatherCities[date] || '').trim() || weatherLoadingDay === date}>
+                      {weatherLoadingDay === date ? '⏳' : '查天氣'}
+                    </button>
+                  </div>
+                )}
 
                 {/* Daily diary */}
-                <div className="diary-section">
-                  <div className="diary-label">📓 今日日記</div>
-                  <textarea
-                    className="diary-textarea"
-                    placeholder="記錄今天的心情、趣事、美食或小抱怨..."
-                    value={localJournal[date]?.text || ''}
-                    onChange={e => {
-                      const updated = { ...localJournal, [date]: { ...localJournal[date], text: e.target.value } };
-                      persist(updated);
-                    }}
-                  />
-                </div>
+                {viewMode === 'edit' ? (
+                  <div className="diary-section">
+                    <div className="diary-label">📓 今日日記</div>
+                    <textarea
+                      className="diary-textarea"
+                      placeholder="記錄今天的心情、趣事、美食或小抱怨..."
+                      value={localJournal[date]?.text || ''}
+                      onChange={e => {
+                        const updated = { ...localJournal, [date]: { ...localJournal[date], text: e.target.value } };
+                        persist(updated);
+                      }}
+                    />
+                  </div>
+                ) : localJournal[date]?.text ? (
+                  <div className="diary-section">
+                    <div className="diary-label">📓 今日日記</div>
+                    <div className="diary-read">{localJournal[date].text}</div>
+                  </div>
+                ) : null}
 
                 {/* Documents */}
-                <div className="seg-docs">
-                  <div className="seg-docs-title">文件附件</div>
-                  {dd.length === 0 ? (
-                    <div style={{ fontSize:12, color:'#bbb', padding:'4px 0 6px' }}>尚未新增文件</div>
-                  ) : dd.map(doc => {
-                    const cfg = DOC_TYPE_CONFIG[doc.type] || DOC_TYPE_CONFIG[LEGACY_TYPE_MAP[doc.type]] || DOC_TYPE_CONFIG.other;
-                    const primary   = getDocPrimary(doc);
-                    const secondary = getDocSecondary(doc);
-                    const tertiary  = getDocTertiary(doc);
-                    return (
-                      <div key={doc.id} className="doc-card">
-                        <span className="doc-icon">{cfg.icon}</span>
-                        <div className="doc-info">
-                          <div className="doc-primary">{primary}</div>
-                          {secondary && <div className="doc-secondary">{secondary}</div>}
-                          {tertiary  && <div className="doc-tertiary">{tertiary}</div>}
+                {(dd.length > 0 || viewMode === 'edit') && (
+                  <div className="seg-docs">
+                    <div className="seg-docs-title">文件附件</div>
+                    {dd.length === 0 ? (
+                      <div style={{ fontSize:12, color:'#bbb', padding:'4px 0 6px' }}>尚未新增文件</div>
+                    ) : dd.map(doc => {
+                      const cfg = DOC_TYPE_CONFIG[doc.type] || DOC_TYPE_CONFIG[LEGACY_TYPE_MAP[doc.type]] || DOC_TYPE_CONFIG.other;
+                      const primary   = getDocPrimary(doc);
+                      const secondary = getDocSecondary(doc);
+                      const tertiary  = getDocTertiary(doc);
+                      return (
+                        <div key={doc.id} className="doc-card">
+                          <span className="doc-icon">{cfg.icon}</span>
+                          <div className="doc-info">
+                            <div className="doc-primary">{primary}</div>
+                            {secondary && <div className="doc-secondary">{secondary}</div>}
+                            {tertiary  && <div className="doc-tertiary">{tertiary}</div>}
+                          </div>
+                          {doc.imageBase64 ? (
+                            <img src={doc.imageBase64} alt="附件" className="doc-thumbnail"
+                              onClick={e => { e.stopPropagation(); setViewImage(doc.imageBase64); }} />
+                          ) : doc.pdfName ? (
+                            <span style={{ fontSize:11, color:'#555', background:'#ececec', borderRadius:4, padding:'2px 6px', flexShrink:0 }}>📄 PDF</span>
+                          ) : null}
+                          {viewMode === 'edit' && (
+                            <div style={{ display:'flex', gap:4, flexShrink:0 }}>
+                              <button className="edit-btn" onClick={() => openEditDoc(doc)}>✎</button>
+                              <button className="del-btn" onClick={() => handleDeleteDoc(doc.id)}>✕</button>
+                            </div>
+                          )}
                         </div>
-                        {doc.imageBase64 ? (
-                          <img src={doc.imageBase64} alt="附件" className="doc-thumbnail"
-                            onClick={e => { e.stopPropagation(); setViewImage(doc.imageBase64); }} />
-                        ) : doc.pdfName ? (
-                          <span style={{ fontSize:11, color:'#555', background:'#ececec', borderRadius:4, padding:'2px 6px', flexShrink:0 }}>📄 PDF</span>
-                        ) : null}
-                        <div style={{ display:'flex', gap:4, flexShrink:0 }}>
-                          <button className="edit-btn" onClick={() => openEditDoc(doc)}>✎</button>
-                          <button className="del-btn" onClick={() => handleDeleteDoc(doc.id)}>✕</button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <button className="add-doc-btn" onClick={() => openAddDoc(date)}>＋ 新增文件</button>
-                </div>
+                      );
+                    })}
+                    {viewMode === 'edit' && (
+                      <button className="add-doc-btn" onClick={() => openAddDoc(date)}>＋ 新增文件</button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -343,11 +343,49 @@ export default function App() {
       tokenExpiryRef.current = expiry;
       fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${accessToken}` }
-      }).then(r => r.json()).then(info => {
+      }).then(r => r.json()).then(async info => {
         const u = { name: info.name, email: info.email, picture: info.picture };
         setUser(u);
         localStorage.setItem('tripuser', JSON.stringify(u));
-        setBooks(loadUserBooks(u.email));
+        const localBooks = loadUserBooks(u.email);
+        setBooks(localBooks);
+        // Scan Drive to recover any books not in localStorage (same as desktop popup flow)
+        try {
+          const driveRes = await fetch(
+            `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("mimeType='application/vnd.google-apps.spreadsheet' and name contains '出遊記帳' and trashed=false")}&fields=files(id,name,createdTime)`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          );
+          const driveData = await driveRes.json();
+          const localIds = new Set(localBooks.map(b => b.id));
+          const recovered = [];
+          for (const file of (driveData.files || [])) {
+            if (localIds.has(file.id)) continue;
+            try {
+              const meta = await loadMetaSheet(accessToken, file.id);
+              recovered.push({
+                id: file.id,
+                name: (meta && meta.name) || file.name.replace('出遊記帳 - ', '') || '旅程',
+                startDate: meta?.startDate || '',
+                endDate: meta?.endDate || '',
+                people: meta?.people || '',
+                budget: meta?.budget || '',
+                createdAt: meta?.createdAt ? parseInt(meta.createdAt) : Date.parse(file.createdTime),
+              });
+            } catch {
+              recovered.push({
+                id: file.id,
+                name: file.name.replace('出遊記帳 - ', '') || '旅程',
+                startDate: '', endDate: '', people: '', budget: '',
+                createdAt: Date.parse(file.createdTime),
+              });
+            }
+          }
+          if (recovered.length > 0) {
+            const merged = [...recovered, ...localBooks].sort((a, b) => b.createdAt - a.createdAt);
+            localStorage.setItem(`tripbooks_${u.email}`, JSON.stringify(merged));
+            setBooks(merged);
+          }
+        } catch (err) { console.warn('Drive 掃描失敗', err); }
       }).catch(() => {});
       return;
     }
