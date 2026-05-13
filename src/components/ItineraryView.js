@@ -156,6 +156,39 @@ const getDaysInRange = (startDate, endDate) => {
 
 const norm = s => typeof s === 'string' ? { text: s, mapUrl: '', note: '' } : s;
 
+// Convert amap.com web links to native app scheme on mobile (bypasses rate limiting)
+const resolveMapUrl = (url) => {
+  if (!url) return url;
+  try {
+    if (url.includes('amap.com')) {
+      const isIOS     = /iPhone|iPad|iPod/.test(navigator.userAgent);
+      const isAndroid = /Android/.test(navigator.userAgent);
+      if (!isIOS && !isAndroid) return url;
+      const scheme = isIOS ? 'iosamap' : 'androidamap';
+      const u = new URL(url);
+      // marker link: position=lon,lat&name=xxx
+      const position = u.searchParams.get('position') || '';
+      const name     = u.searchParams.get('name') || u.searchParams.get('poiname') || '';
+      if (position) {
+        const [lon, lat] = position.split(',');
+        if (lon && lat)
+          return `${scheme}://viewMap?sourceApplication=出遊記帳&poiname=${encodeURIComponent(name)}&lat=${lat.trim()}&lon=${lon.trim()}&dev=0`;
+      }
+      // navigation link: to=lon,lat,name
+      const to = u.searchParams.get('to') || '';
+      if (to) {
+        const parts = to.split(',');
+        if (parts.length >= 2) {
+          const [toLon, toLat, ...rest] = parts;
+          const toName = rest.join(',') || name;
+          return `${scheme}://viewMap?sourceApplication=出遊記帳&poiname=${encodeURIComponent(toName)}&lat=${toLat.trim()}&lon=${toLon.trim()}&dev=0`;
+        }
+      }
+    }
+  } catch {}
+  return url;
+};
+
 const WMO_ICON = code => {
   if (code === 0) return '☀️';
   if (code <= 2)  return '🌤️';
@@ -552,7 +585,7 @@ export default function ItineraryView({ book, journal, onSaveJournal, docs, onSa
                               {stop.note && <div className="stop-note">{stop.note}</div>}
                             </div>
                             {stop.mapUrl && (
-                              <a href={stop.mapUrl} target="_blank" rel="noopener noreferrer"
+                              <a href={resolveMapUrl(stop.mapUrl)} target="_blank" rel="noopener noreferrer"
                                 className="stop-map-btn" onClick={e => e.stopPropagation()} title="開啟地圖">🗺</a>
                             )}
                             {viewMode === 'edit' && (
