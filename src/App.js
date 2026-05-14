@@ -6,12 +6,13 @@ import SplitView from './components/SplitView';
 import DashboardView from './components/DashboardView';
 import ItineraryView from './components/ItineraryView';
 import './App.css';
+import { IMPORT_SETS } from './data/importData';
 
 const CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || 'YOUR_GOOGLE_CLIENT_ID';
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
 const FOLDER_PATH = ['出遊記帳app'];
-const CURRENCY_CODES = ['TWD','JPY','KRW','THB','HKD','SGD','USD','EUR','GBP','AUD','MYR','VND','CNY'];
-const DEFAULT_RATES = { TWD:1, JPY:0.22, KRW:0.023, THB:0.90, HKD:4.10, SGD:24, USD:32, EUR:35, GBP:41, AUD:20, MYR:7, VND:0.0013, CNY:4.4 };
+const CURRENCY_CODES = ['TWD','JPY','KRW','THB','HKD','SGD','USD','EUR','GBP','AUD','MYR','VND','CNY','IDR'];
+const DEFAULT_RATES = { TWD:1, JPY:0.22, KRW:0.023, THB:0.90, HKD:4.10, SGD:24, USD:32, EUR:35, GBP:41, AUD:20, MYR:7, VND:0.0013, CNY:4.4, IDR:0.002 };
 
 // ── OCR helpers ──────────────────────────────────────────────────────────────
 
@@ -723,6 +724,25 @@ export default function App() {
     setLoading(false);
   };
 
+  const batchImportEntries = async (entries) => {
+    if (!activeBook || !entries || !entries.length) return;
+    setLoading(true);
+    try {
+      const t = await getValidToken();
+      await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${activeBook.id}/values/記帳!A:J:append?valueInputOption=USER_ENTERED`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: entries })
+        }
+      );
+      await loadEntries(activeBook);
+      alert(`成功匯入 ${entries.length} 筆記錄！`);
+    } catch (e) { alert('匯入失敗，請重新登入後再試'); }
+    setLoading(false);
+  };
+
   const deleteEntry = async (rowIndex) => {
     if (!activeBook) return;
     setLoading(true);
@@ -981,6 +1001,11 @@ export default function App() {
       const t = await getValidToken();
       await ensureExtraSheets(t, updated.id);
       await writeMetaSheet(t, updated.id, updated);
+      await fetch(`https://www.googleapis.com/drive/v3/files/${updated.id}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: `出遊記帳 - ${updated.name}` })
+      });
     } catch { /* silent */ }
   };
 
@@ -1068,7 +1093,7 @@ export default function App() {
           <DashboardView book={activeBook} entries={entries} rates={rates} />
         )}
         {view === 'detail' && activeBook && (
-          <BookDetail book={activeBook} entries={entries} rates={rates} onAdd={() => setView('add')} onRefresh={() => loadEntries(activeBook)} onDelete={deleteEntry} onEdit={(entry) => { setEditingEntry(entry); setView('add'); }} />
+          <BookDetail book={activeBook} entries={entries} rates={rates} onAdd={() => setView('add')} onRefresh={() => loadEntries(activeBook)} onDelete={deleteEntry} onEdit={(entry) => { setEditingEntry(entry); setView('add'); }} onImport={batchImportEntries} />
         )}
         {view === 'itinerary' && activeBook && (
           <ItineraryView

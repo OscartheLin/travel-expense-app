@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
+import { ITINERARY_IMPORT_SETS } from '../data/itineraryData';
 
 // Image helpers
 const resizeImage = (file, maxW = 1000) => new Promise(resolve => {
@@ -154,7 +155,7 @@ const getDaysInRange = (startDate, endDate) => {
   return days;
 };
 
-const norm = s => typeof s === 'string' ? { text: s, mapUrl: '', note: '' } : s;
+const norm = s => typeof s === 'string' ? { text: s, mapUrl: '', note: '', time: '' } : { time: '', mapUrl: '', note: '', ...s };
 
 // Convert amap.com web links to native app scheme on mobile (bypasses rate limiting)
 const resolveMapUrl = (url) => {
@@ -214,10 +215,13 @@ export default function ItineraryView({ book, journal, onSaveJournal, docs, onSa
   const [viewImage, setViewImage]       = useState(null);
   const [localJournal, setLocalJournal] = useState(journal || {});
 
-  const [editStop, setEditStop]           = useState(null);
-  const [editStopText, setEditStopText]   = useState('');
-  const [editStopMap, setEditStopMap]     = useState('');
-  const [newStopInputs, setNewStopInputs] = useState({});
+  const [editStop, setEditStop]             = useState(null);
+  const [editStopText, setEditStopText]     = useState('');
+  const [editStopMap, setEditStopMap]       = useState('');
+  const [editStopTime, setEditStopTime]     = useState('');
+  const [newStopInputs, setNewStopInputs]   = useState({});
+  const [showImportItinerary, setShowImportItinerary] = useState(false);
+  const [selectedItinKey, setSelectedItinKey]         = useState(null);
   const [dragInfo, setDragInfo]           = useState(null); // { date, idx }
   const [dragOverIdx, setDragOverIdx]     = useState(null);
   const [editStopNote, setEditStopNote]   = useState('');
@@ -248,9 +252,13 @@ export default function ItineraryView({ book, journal, onSaveJournal, docs, onSa
 
   // ── Stops ──────────────────────────────────────────────────────────────────
   const handleAddStop = date => {
-    const text = (newStopInputs[date] || '').trim();
-    if (!text) return;
-    const stops = [...getStops(date), { text, mapUrl: '' }];
+    const raw = (newStopInputs[date] || '').trim();
+    if (!raw) return;
+    const timeMatch = raw.match(/^(\d{1,2}:\d{2})\s+([\s\S]+)/);
+    let time = timeMatch ? timeMatch[1] : '';
+    if (time && time.length === 4) time = '0' + time;
+    const text = timeMatch ? timeMatch[2].trim() : raw;
+    const stops = [...getStops(date), { text, time, mapUrl: '', note: '' }];
     persist({ ...localJournal, [date]: { ...localJournal[date], stops } });
     setNewStopInputs(n => ({ ...n, [date]: '' }));
   };
@@ -330,16 +338,30 @@ export default function ItineraryView({ book, journal, onSaveJournal, docs, onSa
     setEditStopText(s.text || '');
     setEditStopMap(s.mapUrl || '');
     setEditStopNote(s.note || '');
+    setEditStopTime(s.time || '');
   };
 
   const confirmEditStop = () => {
     if (!editStop || !editStopText.trim()) { setEditStop(null); return; }
     const { date, idx } = editStop;
     const stops = getStops(date).map((s, i) =>
-      i === idx ? { text: editStopText.trim(), mapUrl: editStopMap.trim(), note: editStopNote.trim() } : s
+      i === idx ? { text: editStopText.trim(), mapUrl: editStopMap.trim(), note: editStopNote.trim(), time: editStopTime.trim() } : s
     );
     persist({ ...localJournal, [date]: { ...localJournal[date], stops } });
     setEditStop(null);
+  };
+
+  const handleImportItinerary = () => {
+    const set = ITINERARY_IMPORT_SETS.find(s => s.key === selectedItinKey);
+    if (!set) return;
+    if (!window.confirm(`確定匯入「${set.name}」的行程？\n已有內容的天次將會被覆蓋。`)) return;
+    const updated = { ...localJournal };
+    Object.entries(set.days).forEach(([date, stops]) => {
+      updated[date] = { ...(updated[date] || {}), stops: stops.map(s => ({ mapUrl: '', note: '', ...s })) };
+    });
+    persist(updated);
+    setShowImportItinerary(false);
+    setSelectedItinKey(null);
   };
 
   // ── Docs ───────────────────────────────────────────────────────────────────
@@ -476,14 +498,24 @@ export default function ItineraryView({ book, journal, onSaveJournal, docs, onSa
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 0 6px' }}>
         <p style={{ fontSize:12, color:'#888', lineHeight:1.7, margin:0 }}>
           共 {days.length} 天
-          {viewMode === 'edit' && ' · 點開每天新增地點、貼地圖連結、掃描文件'}
+          {viewMode === 'edit' && ' · 點開每天新增景點、貼地圖連結、掃描文件'}
         </p>
-        <button
-          className={`view-mode-toggle ${viewMode === 'read' ? 'read-active' : ''}`}
-          onClick={() => setViewMode(m => m === 'edit' ? 'read' : 'edit')}
-        >
-          {viewMode === 'edit' ? '👁 閱讀' : '✎ 編輯'}
-        </button>
+        <div style={{ display:'flex', gap:6 }}>
+          {viewMode === 'edit' && (
+            <button
+              onClick={() => { setSelectedItinKey(null); setShowImportItinerary(true); }}
+              style={{ fontSize:12, padding:'5px 10px', background:'#E8F4FD', color:'#185FA5',
+                border:'none', borderRadius:8, cursor:'pointer', fontWeight:600 }}>
+              匯入行程
+            </button>
+          )}
+          <button
+            className={`view-mode-toggle ${viewMode === 'read' ? 'read-active' : ''}`}
+            onClick={() => setViewMode(m => m === 'edit' ? 'read' : 'edit')}
+          >
+            {viewMode === 'edit' ? '👁 閱讀' : '✎ 編輯'}
+          </button>
+        </div>
       </div>
 
       {days.map((date, dayIdx) => {
@@ -495,7 +527,7 @@ export default function ItineraryView({ book, journal, onSaveJournal, docs, onSa
         const isToday = date === today;
         const dayWeather = localJournal[date]?.weather;
         const preview = stops.length > 0
-          ? stops.slice(0, 3).map(s => s.text).join(' → ') + (stops.length > 3 ? '...' : '')
+          ? stops.slice(0, 3).map(s => s.time ? `${s.time} ${s.text}` : s.text).join(' → ') + (stops.length > 3 ? '...' : '')
           : null;
 
         return (
@@ -553,9 +585,14 @@ export default function ItineraryView({ book, journal, onSaveJournal, docs, onSa
                         {viewMode === 'edit' && isEditing ? (
                           <div className="stop-edit-form">
                             <div className="stop-edit-top">
+                              <input className="stop-edit-input" value={editStopTime}
+                                placeholder="時間（選填，例：09:00）"
+                                style={{ maxWidth:90, flexShrink:0 }}
+                                onChange={e => setEditStopTime(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) confirmEditStop(); if (e.key === 'Escape') setEditStop(null); }} />
                               <span className="stop-bullet">📍</span>
                               <input className="stop-edit-input" value={editStopText} autoFocus
-                                placeholder="地點名稱"
+                                placeholder="景點或行程名稱"
                                 onChange={e => setEditStopText(e.target.value)}
                                 onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) confirmEditStop(); if (e.key === 'Escape') setEditStop(null); }} />
                               <button className="stop-confirm-btn" onClick={confirmEditStop}>✓</button>
@@ -579,6 +616,11 @@ export default function ItineraryView({ book, journal, onSaveJournal, docs, onSa
                         ) : (
                           <>
                             {viewMode === 'edit' && <span className="stop-drag-handle">⠿</span>}
+                            {stop.time && (
+                              <span style={{ fontSize:11, fontWeight:700, color:'#185FA5',
+                                background:'#EAF4FF', borderRadius:5, padding:'1px 6px',
+                                flexShrink:0, marginRight:2 }}>{stop.time}</span>
+                            )}
                             <span className="stop-bullet">📍</span>
                             <div className="stop-content">
                               <span className="stop-text">{stop.text}</span>
@@ -604,7 +646,7 @@ export default function ItineraryView({ book, journal, onSaveJournal, docs, onSa
                     <div className="stop-add-row">
                       <span style={{ fontSize:16, flexShrink:0, opacity:0.3 }}>📍</span>
                       <input className="stop-add-input"
-                        placeholder="新增地點或行程（按 Enter 送出）"
+                        placeholder="新增景點（可加時間，例：09:00 淺草寺）"
                         value={newStopInputs[date] || ''}
                         onChange={e => setNewStopInputs(n => ({ ...n, [date]: e.target.value }))}
                         onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleAddStop(date); }} />
@@ -697,6 +739,36 @@ export default function ItineraryView({ book, journal, onSaveJournal, docs, onSa
           </div>
         );
       })}
+
+      {/* Itinerary import modal */}
+      {showImportItinerary && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setShowImportItinerary(false)}>
+          <div className="modal">
+            <h2>📅 匯入行程</h2>
+            <p style={{ fontSize:13, color:'#666', marginBottom:12 }}>選擇要匯入的旅程行程，已有內容的天次將被覆蓋</p>
+            {ITINERARY_IMPORT_SETS.map(s => (
+              <div key={s.key}
+                onClick={() => setSelectedItinKey(s.key)}
+                style={{
+                  padding: '10px 14px', marginBottom: 8, borderRadius: 10, cursor: 'pointer',
+                  border: `2px solid ${selectedItinKey === s.key ? '#185FA5' : '#e0e0e0'}`,
+                  background: selectedItinKey === s.key ? '#EAF4FF' : '#fafafa',
+                }}>
+                <div style={{ fontWeight:600, fontSize:15 }}>{s.name}</div>
+                <div style={{ fontSize:12, color:'#888', marginTop:2 }}>
+                  {s.startDate} – {s.endDate} ・ {Object.values(s.days).reduce((n, d) => n + d.length, 0)} 個景點
+                </div>
+              </div>
+            ))}
+            <button className="btn-primary" style={{ marginTop:8 }}
+              disabled={!selectedItinKey}
+              onClick={handleImportItinerary}>
+              確認匯入
+            </button>
+            <button className="btn-cancel" onClick={() => setShowImportItinerary(false)}>取消</button>
+          </div>
+        </div>
+      )}
 
       {/* Document modal */}
       {showDocModal !== null && (

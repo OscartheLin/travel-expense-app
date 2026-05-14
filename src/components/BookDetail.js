@@ -1,12 +1,15 @@
 import React, { useState, useMemo } from 'react';
 import Avatar from './Avatar';
+import { IMPORT_SETS } from '../data/importData';
 
 const CAT_ICON = { 餐飲: '🍜', 購物: '🛍', 交通: '🚗', 住宿: '🏨', 娛樂: '🎡', 其他: '📌' };
 const CAT_ORDER = ['餐飲', '購物', '交通', '住宿', '娛樂', '其他'];
-const CURRENCY_SYMBOL = { JPY:'¥', KRW:'₩', THB:'฿', HKD:'HK$', SGD:'S$', USD:'$', EUR:'€', GBP:'£', AUD:'A$', MYR:'RM', VND:'₫', CNY:'CN¥', TWD:'NT$' };
+const CURRENCY_SYMBOL = { JPY:'¥', KRW:'₩', THB:'฿', HKD:'HK$', SGD:'S$', USD:'$', EUR:'€', GBP:'£', AUD:'A$', MYR:'RM', VND:'₫', CNY:'CN¥', TWD:'NT$', IDR:'Rp' };
 
-export default function BookDetail({ book, entries, rates, onAdd, onRefresh, onDelete, onEdit }) {
+export default function BookDetail({ book, entries, rates, onAdd, onRefresh, onDelete, onEdit, onImport }) {
   const [confirmId, setConfirmId] = useState(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [selectedKey, setSelectedKey] = useState(null);
 
   const people = useMemo(() => {
     if (book.people) return book.people.split(/[,，、]/).map(s => s.trim()).filter(Boolean);
@@ -79,7 +82,15 @@ export default function BookDetail({ book, entries, rates, onAdd, onRefresh, onD
 
       <div className="entries-header">
         <span className="entries-title">消費明細（{entries.length} 筆）</span>
-        <button className="refresh-btn" onClick={onRefresh}>重新整理</button>
+        <div style={{ display:'flex', gap:6 }}>
+          {onImport && (
+            <button className="refresh-btn" onClick={() => { setSelectedKey(null); setShowImportModal(true); }}
+              style={{ background:'#E8F4FD', color:'#185FA5' }}>
+              匯入舊資料
+            </button>
+          )}
+          <button className="refresh-btn" onClick={onRefresh}>重新整理</button>
+        </div>
       </div>
 
       {entries.length === 0 ? (
@@ -132,6 +143,41 @@ export default function BookDetail({ book, entries, rates, onAdd, onRefresh, onD
       )}
 
       <button className="fab" onClick={onAdd}>＋ 新增一筆</button>
+
+      {showImportModal && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setShowImportModal(false)}>
+          <div className="modal">
+            <h2>📥 匯入舊資料</h2>
+            <p style={{ fontSize:13, color:'#666', marginBottom:12 }}>選擇要匯入的旅程記帳，資料將附加到目前帳本</p>
+            {IMPORT_SETS.map(s => (
+              <div key={s.key}
+                onClick={() => setSelectedKey(s.key)}
+                style={{
+                  padding: '10px 14px', marginBottom: 8, borderRadius: 10, cursor: 'pointer',
+                  border: `2px solid ${selectedKey === s.key ? '#185FA5' : '#e0e0e0'}`,
+                  background: selectedKey === s.key ? '#EAF4FF' : '#fafafa',
+                }}>
+                <div style={{ fontWeight: 600, fontSize: 15 }}>{s.name}</div>
+                <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                  {s.startDate} – {s.endDate} ・ {s.entries.length} 筆
+                </div>
+              </div>
+            ))}
+            <button className="btn-primary" style={{ marginTop: 8 }}
+              disabled={!selectedKey}
+              onClick={() => {
+                const set = IMPORT_SETS.find(s => s.key === selectedKey);
+                if (!set) return;
+                if (!window.confirm(`確定匯入「${set.name}」共 ${set.entries.length} 筆記錄？\n（附加在現有記帳後面，不覆蓋）`)) return;
+                setShowImportModal(false);
+                onImport(set.entries);
+              }}>
+              確認匯入
+            </button>
+            <button className="btn-cancel" onClick={() => setShowImportModal(false)}>取消</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

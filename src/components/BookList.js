@@ -55,7 +55,12 @@ export default function BookList({ books, onOpen, onCreate, onJoin, onDelete, lo
         </div>
       )}
 
-      {books.map(book => {
+      {[...books].sort((a, b) => {
+        if (!a.startDate && !b.startDate) return 0;
+        if (!a.startDate) return 1;
+        if (!b.startDate) return -1;
+        return b.startDate.localeCompare(a.startDate);
+      }).map(book => {
         const dayCount = getDayCount(book.startDate, book.endDate);
         const status = getTripStatus(book.startDate, book.endDate);
         const people = book.people ? book.people.split(/[,，、]/).map(s => s.trim()).filter(Boolean) : [];

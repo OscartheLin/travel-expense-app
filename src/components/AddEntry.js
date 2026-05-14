@@ -18,6 +18,7 @@ const CURRENCIES = [
   { code: 'MYR', symbol: 'RM',  name: '馬幣' },
   { code: 'VND', symbol: '₫',   name: '越盾' },
   { code: 'CNY', symbol: 'CN¥', name: '人民幣' },
+  { code: 'IDR', symbol: 'Rp',  name: '印尼盾' },
 ];
 
 export default function AddEntry({ book, onSave, onCancel, initialEntry, onOcr }) {
